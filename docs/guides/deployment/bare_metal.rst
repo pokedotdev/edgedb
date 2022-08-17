@@ -138,6 +138,11 @@ This allows connecting to the instance with it's name.
 Upgrading EdgeDB
 ================
 
+.. note::
+
+   The command groups ``edgedb instance`` and ``edgedb project`` are not
+   intended to manage production instances.
+
 When you want to upgrade to the newest point release upgrade the package and
 restart the ``edgedb-server-2`` unit.
 

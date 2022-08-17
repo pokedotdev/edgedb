@@ -216,6 +216,11 @@ You can now use the EdgeDB instance deployed on DigitalOcean as
 Upgrading EdgeDB
 ================
 
+.. note::
+
+   The command groups ``edgedb instance`` and ``edgedb project`` are not
+   intended to manage production instances.
+
 To upgrade an existing EdgeDB droplet to the latest point release, ssh into
 your droplet and run the following.
 

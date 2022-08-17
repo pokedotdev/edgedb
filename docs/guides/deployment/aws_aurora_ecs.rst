@@ -57,6 +57,11 @@ run ``edgedb instance link``:
 Don't forget to replace ``<ip-or-dns>`` with the value from the AWS console.
 You can now use the EdgeDB instance deployed on AWS as ``aws``, for example:
 
+.. note::
+
+   The command groups ``edgedb instance`` and ``edgedb project`` are not
+   intended to manage production instances.
+
 .. code-block:: bash
 
    $ edgedb -I aws
@@ -805,5 +810,10 @@ link``:
             | [0].Association.PublicIp" \
         )" \
         aws
+
+.. note::
+
+   The command groups ``edgedb instance`` and ``edgedb project`` are not
+   intended to manage production instances.
 
 You can now open a REPL to this instance
