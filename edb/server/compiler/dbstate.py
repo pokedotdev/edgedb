@@ -97,6 +97,7 @@ class Query(BaseQuery):
     has_dml: bool = False
     single_unit: bool = False
     cacheable: bool = True
+    is_explain: bool = False
 
 
 @dataclasses.dataclass(frozen=True)

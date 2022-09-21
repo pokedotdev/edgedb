@@ -611,6 +611,33 @@ class Compiler:
             devmode=self._is_dev_instance(),
         )
 
+    def _compile_ql_explain(
+        self,
+        ctx: CompileContext,
+        ql: qlast.ExplainStmt,
+        *,
+        script_info: Optional[irast.ScriptInfo] = None,
+    ) -> dbstate.BaseQuery:
+        # TODO: more arguments for EXPLAIN
+        analyze = 'ANALYZE true, ' if ql.analyze else ''
+        exp_command = f'EXPLAIN ({analyze}FORMAT JSON)'
+
+        query = self._compile_ql_query(
+            ctx, ql.query, script_info=script_info, cacheable=False)
+        assert len(query.sql) == 1
+
+        out_type_data, out_type_id = \
+            sertypes.TypeSerializer.describe_json()
+
+        return dataclasses.replace(
+            query,
+            is_explain=True,
+            sql=(exp_command.encode('utf-8') + query.sql[0],),
+            # XXX: This is not right really
+            out_type_data=out_type_data,
+            out_type_id=out_type_id.bytes,
+        )
+
     def _compile_ql_query(
         self,
         ctx: CompileContext,
@@ -1750,6 +1777,16 @@ class Compiler:
                 self._compile_ql_config_op(ctx, ql),
                 capability,
             )
+
+        elif isinstance(ql, qlast.ExplainStmt):
+            query = self._compile_ql_explain(ctx, ql, script_info=script_info)
+            caps = enums.Capability(0)
+            if (
+                isinstance(query, (dbstate.Query, dbstate.SimpleQuery))
+                and query.has_dml
+            ):
+                caps |= enums.Capability.MODIFICATIONS
+            return (query, caps)
 
         else:
             query = self._compile_ql_query(ctx, ql, script_info=script_info)
