@@ -299,6 +299,13 @@ class DynamicRangeVar(PathRangeVar):
 
     dynamic_get_path: DynamicRangeVarFunc
 
+    # pickling is broken here, oh well
+    def __getstate__(self) -> typing.Any:
+        return ()
+
+    def __setstate__(self, state: typing.Any) -> None:
+        self.dynamic_get_path = None  # type: ignore
+
 
 class TypeName(ImmutableBase):
     """Type in definitions and casts."""

@@ -106,6 +106,21 @@ class ScopeTreeNode:
         self.is_group = False
         self._parent: Optional[weakref.ReferenceType[ScopeTreeNode]] = None
 
+    FIELDS = (
+        'unique_id', 'path_id', 'fenced', 'unnest_fence', 'factoring_fence',
+        'factoring_allowlist', 'optional', 'children', 'namespaces',
+        'is_group',
+    )
+
+    def __getstate__(self) -> Any:
+        return tuple(getattr(self, f) for f in self.FIELDS)
+
+    def __setstate__(self, state: Any) -> None:
+        for f, val in zip(self.FIELDS, state):
+            setattr(self, f, val)
+        for child in self.children:
+            child._parent = weakref.ref(self)
+
     def __repr__(self) -> str:
         name = 'ScopeFenceNode' if self.fenced else 'ScopeTreeNode'
         return (f'<{name} {self.path_id!r} at {id(self):0x}>')
