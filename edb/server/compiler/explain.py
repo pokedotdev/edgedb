@@ -20,13 +20,9 @@
 from __future__ import annotations
 from typing import *
 
-# import collections
-# import dataclasses
 import json
-# import hashlib
-# import pickle
-# import textwrap
-# import uuid
+import re
+import uuid
 import struct
 
 # import immutables
@@ -61,9 +57,10 @@ from edb.ir import ast as irast
 # from edb.schema import name as s_name
 # from edb.schema import objects as s_obj
 # from edb.schema import objtypes as s_objtypes
-# from edb.schema import pointers as s_pointers
+from edb.schema import constraints as s_constr
+from edb.schema import pointers as s_pointers
 # from edb.schema import reflection as s_refl
-# from edb.schema import schema as s_schema
+from edb.schema import schema as s_schema
 # from edb.schema import types as s_types
 # from edb.schema import utils as s_utils
 
@@ -81,10 +78,67 @@ from edb.pgsql import ast as pgast
 # from . import sertypes
 # from . import status
 
+uuid_core = '[a-f0-9]{8}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{12}'
+uuid_re = re.compile(
+    f'(\.?"?({uuid_core})"?)',
+    re.I
+)
+
+
+# This is just really hokey string replacement stuff...
+# We need to think about whether we can do better and how we can
+# represent it.
+def json_fixup(
+    obj: Any, schema: s_schema.Schema, idx: int | str | None = None
+) -> Any:
+    if isinstance(obj, list):
+        return [json_fixup(x, schema) for x in obj]
+    elif isinstance(obj, dict):
+        return {
+            k: json_fixup(v, schema, k) for k, v in obj.items()
+            if k not in ('Schema',)
+        }
+    elif isinstance(obj, str):
+        if idx == 'Index Name':
+            obj = obj.replace('_source_target_key', ' forward link index')
+            obj = obj.replace(';schemaconstr', ' exclusive constraint index')
+            obj = obj.replace('_target_key', ' backward link index')
+            # ???
+            obj = obj.replace('_index', ' backward inline link index')
+
+        for (full, m) in uuid_re.findall(obj):
+            uid = uuid.UUID(m)
+            sobj = schema.get_by_id(uid, default=None)
+            if sobj:
+                dotted = full[0] == '.'
+                if isinstance(sobj, s_pointers.Pointer):
+                    # If a pointer is on the RHS of a dot, just use
+                    # the short name. But otherwise, grab the source
+                    # and link it up
+                    s = str(sobj.get_shortname(schema).name)
+                    if sobj.is_link_property(schema):
+                        s = f'@{s}'
+                    if not dotted:
+                        src_name = sobj.get_source(schema).get_name(schema)
+                        s = f'{src_name}.{s}'
+                elif isinstance(sobj, s_constr.Constraint):
+                    s = sobj.get_verbosename(schema, with_parent=True)
+                else:
+                    s = str(sobj.get_name(schema))
+
+                if dotted:
+                    s = '.' + s
+                obj = uuid_re.sub(s, obj, count=1)
+
+        return obj
+    else:
+        return obj
+
+
 def analyze_explain_output(
     dbv: Any, # dbview.DatabaseConnectionView,
     compiled: Any, #dbview.CompiledQuery,
-    data: bytes,
+    data: list[list[bytes]],
 ) -> bytes:
     debug.header('Explain')
 
@@ -93,13 +147,17 @@ def analyze_explain_output(
     ir: irast.Statement
     pg: pgast.Base
     ql, ir, pg = unit.query_asts
+    schema = ir.schema
+    if not (len(data) == 1 and len(data[0]) == 1):
+        breakpoint()
     assert len(data) == 1 and len(data[0]) == 1
     # print('DATA', data)
-    plan = json.loads(data[0][0])
+    try:
+        plan = json.loads(data[0][0])
+    except UnicodeDecodeError:
+        breakpoint()
+    plan = json_fixup(plan, schema)
 
-    print(dbv)
-    ql.dump()
-    ir.dump()
     debug.dump(plan)
 
     return make_message([{

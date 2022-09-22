@@ -620,7 +620,7 @@ class Compiler:
     ) -> dbstate.BaseQuery:
         # TODO: more arguments for EXPLAIN
         analyze = 'ANALYZE true, ' if ql.analyze else ''
-        exp_command = f'EXPLAIN ({analyze}FORMAT JSON)'
+        exp_command = f'EXPLAIN ({analyze}FORMAT JSON, VERBOSE true)'
 
         query = self._compile_ql_query(
             ctx, ql.query, script_info=script_info, cacheable=False)
