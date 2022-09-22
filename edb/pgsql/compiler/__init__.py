@@ -137,7 +137,7 @@ def compile_ir_to_sql_tree(
     return qtree
 
 
-def compile_ir_to_sql(
+def compile_ir_to_tree_and_sql(
     ir_expr: irast.Base, *,
     output_format: Optional[OutputFormat]=None,
     ignore_shapes: bool=False,
@@ -147,7 +147,7 @@ def compile_ir_to_sql(
     expected_cardinality_one: bool=False,
     pretty: bool=True,
     backend_runtime_params: Optional[pgparams.BackendRuntimeParams]=None,
-) -> Tuple[str, Dict[str, pgast.Param]]:
+) -> Tuple[pgast.Base, str, Dict[str, pgast.Param]]:
 
     qtree = compile_ir_to_sql_tree(
         ir_expr,
@@ -187,6 +187,31 @@ def compile_ir_to_sql(
         debug_sql_text = run_codegen(qtree, pretty=True, reordered=True)
         debug.dump_code(debug_sql_text, lexer='sql')
 
+    return qtree, sql_text, argmap
+
+
+def compile_ir_to_sql(
+    ir_expr: irast.Base, *,
+    output_format: Optional[OutputFormat]=None,
+    ignore_shapes: bool=False,
+    explicit_top_cast: Optional[irast.TypeRef]=None,
+    singleton_mode: bool=False,
+    use_named_params: bool=False,
+    expected_cardinality_one: bool=False,
+    pretty: bool=True,
+    backend_runtime_params: Optional[pgparams.BackendRuntimeParams]=None,
+) -> Tuple[str, Dict[str, pgast.Param]]:
+    _, sql_text, argmap = compile_ir_to_tree_and_sql(
+        ir_expr,
+        output_format=output_format,
+        ignore_shapes=ignore_shapes,
+        explicit_top_cast=explicit_top_cast,
+        singleton_mode=singleton_mode,
+        use_named_params=use_named_params,
+        expected_cardinality_one=expected_cardinality_one,
+        backend_runtime_params=backend_runtime_params,
+        pretty=pretty,
+    )
     return sql_text, argmap
 
 

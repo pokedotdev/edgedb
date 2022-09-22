@@ -22,6 +22,7 @@ from typing import (
     Optional,
 )
 
+import asyncio
 import decimal
 import json
 
@@ -52,7 +53,7 @@ async def execute(
     compiled: dbview.CompiledQuery,
     bind_args: bytes,
     *,
-    fe_conn: Optional[frontend.FrontendConnection] = None,
+    fe_conn: frontend.FrontendConnection = None,
     use_prep_stmt: bint = False,
 ):
     cdef:
@@ -96,9 +97,11 @@ async def execute(
                     bound_args_buf = args_ser.recode_bind_args(
                         dbv, compiled, bind_args)
 
+                    read_data = query_unit.set_global or query_unit.is_explain
+
                     data = await be_conn.parse_execute(
                         query=query_unit,
-                        fe_conn=fe_conn if not query_unit.set_global else None,
+                        fe_conn=fe_conn if not read_data else None,
                         bind_data=bound_args_buf,
                         use_prep_stmt=use_prep_stmt,
                         state=state,
@@ -110,6 +113,18 @@ async def execute(
                             config.Operation.from_json(r[0][1:])
                             for r in data
                         ]
+
+                    if query_unit.is_explain:
+                        # Do it in a thread so that it doesn't *block*
+                        # the IO server, even if it does steal cycles
+                        # from it.
+                        r = await asyncio.to_thread(
+                            compiler.analyze_explain_output,
+                            dbv, compiled, data,
+                        )
+                        buf = WriteBuffer.new_message(b'D')
+                        buf.write_bytes(r)
+                        fe_conn.write(buf.end_message())
 
                 if state is not None:
                     # state is restored, clear orig_state so that we can

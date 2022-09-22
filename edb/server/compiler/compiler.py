@@ -660,7 +660,7 @@ class Compiler:
 
         result_cardinality = enums.cardinality_from_ir_value(ir.cardinality)
 
-        sql_text, argmap = pg_compiler.compile_ir_to_sql(
+        qtree, sql_text, argmap = pg_compiler.compile_ir_to_tree_and_sql(
             ir,
             pretty=(
                 debug.flags.edgeql_compile
@@ -759,6 +759,7 @@ class Compiler:
             out_type_data=out_type_data,
             cacheable=cacheable,
             has_dml=ir.dml_exprs,
+            query_asts=(ql, ir, qtree),
         )
 
     def _extract_params(
@@ -1931,6 +1932,10 @@ class Compiler:
                 unit.in_type_id = comp.in_type_id
 
                 unit.cacheable = comp.cacheable
+
+                if comp.is_explain:
+                    unit.is_explain = True
+                    unit.query_asts = comp.query_asts
 
                 if is_trailing_stmt:
                     unit.cardinality = comp.cardinality
