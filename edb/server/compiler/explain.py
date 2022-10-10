@@ -20,6 +20,7 @@
 from __future__ import annotations
 from typing import *
 
+import dataclasses
 import json
 import re
 import uuid
@@ -33,6 +34,7 @@ import struct
 # from edb.pgsql import compiler as pg_compiler
 
 # from edb import edgeql
+from edb.common import ast
 from edb.common import debug
 # from edb.common import verutils
 # from edb.common import uuidgen
@@ -46,6 +48,7 @@ from edb.edgeql import ast as qlast
 
 # from edb.ir import staeval as ireval
 from edb.ir import ast as irast
+from edb.ir import utils as irutils
 
 # from edb.schema import database as s_db
 # from edb.schema import ddl as s_ddl
@@ -65,6 +68,7 @@ from edb.schema import schema as s_schema
 # from edb.schema import utils as s_utils
 
 from edb.pgsql import ast as pgast
+from edb.pgsql.compiler import pathctx
 # from edb.pgsql import common as pg_common
 # from edb.pgsql import delta as pg_delta
 # from edb.pgsql import dbops as pg_dbops
@@ -85,6 +89,107 @@ uuid_re = re.compile(
 )
 
 
+@dataclasses.dataclass
+class AnalysisInfo:
+    aliases: dict[str, pgast.PathRangeVar]
+    alias_to_path_id: dict[str, tuple[irast.PathId, Optional[int]]]
+    sets: dict[irast.PathId, set[irast.Set]]
+
+
+def analyze_queries(
+    ql: qlast.Base, ir: irast.Statement, pg: pgast.Base,
+    *, schema: s_schema.Schema,
+) -> AnalysisInfo:
+    rvars = ast.find_children(pg, pgast.PathRangeVar)
+    queries = ast.find_children(pg, pgast.Query)
+
+    # Map subqueries back to their rvars
+    subq_to_rvar: dict[pgast.Query, pgast.RangeSubselect] = {}
+    for rvar in rvars:
+        if isinstance(rvar, pgast.RangeSubselect):
+            assert rvar.subquery not in subq_to_rvar
+            subq_to_rvar[rvar.subquery] = rvar
+
+    # Find all *references* to an rvar in path_rvar_maps
+    reverse_path_rvar_map: dict[
+        pgast.PathRangeVar,
+        list[tuple[tuple[irast.PathId, str], pgast.Query]]
+    ] = {}
+    for qry in queries:
+        for key, rvar in qry.path_rvar_map.items():
+            reverse_path_rvar_map.setdefault(rvar, []).append((key, qry))
+
+    # Map aliases to rvars and then to path ids
+    aliases = {
+        rvar.alias.aliasname: rvar for rvar in rvars if rvar.alias.aliasname
+    }
+    path_ids = {
+        alias: (rvar.relation.path_id, rvar.relation.path_scope_id)
+        for alias, rvar in aliases.items()
+        if isinstance(rvar, pgast.RelRangeVar)
+        and isinstance(rvar.relation, pgast.BaseRelation)
+        and rvar.relation.path_id
+    }
+
+    # Find all the sets
+    sets: dict[irast.PathId, set[irast.Set]] = {}
+    for s in ast.find_children(ir, irast.Set):
+        if s.context:
+            sets.setdefault(s.path_id, set()).add(s)
+
+    scopes = irutils.find_path_scopes(ir)
+
+    # Trying to produce good contexts for stuff
+    # KEY FACT: We often duplicate code for with bindings
+    for alias, (path_id, scope_id) in path_ids.items():
+        if scope_id is None:  # ???
+            continue
+        for s in sets.get(path_id, ()):
+            if scopes.get(s) == scope_id and s.context:
+                asets = [s]
+
+                # Loop back through...
+                cpath = path_id
+                rvar = aliases[alias]
+                while True:
+                    sources = [
+                        s for k, s in
+                        reverse_path_rvar_map.get(rvar, ())
+                        if k == (cpath, 'source')
+                    ]
+                    print(sources, cpath)
+                    if sources:
+                        source = sources[0]
+                        cpath = pathctx.reverse_map_path_id(
+                            cpath, source.view_path_id_map)
+
+                        ns = tuple(sets.get(cpath, ()))
+                        if len(ns) == 1 and ns[0].context:
+                            if ns[0] not in asets:
+                                asets.append(ns[0])
+
+                        if source not in subq_to_rvar:
+                            break
+                        rvar = subq_to_rvar[source]
+                    else:
+                        break
+
+                print(
+                    alias, [
+                        (x.context.start, x.context.end)
+                        for x in asets if x.context
+                    ]
+                )
+                print(asets)
+                for x in asets:
+                    debug.dump(x.context)
+
+    return AnalysisInfo(
+        aliases=aliases,
+        alias_to_path_id=path_ids,
+        sets=sets,
+    )
+
 # This is just really hokey string replacement stuff...
 # We need to think about whether we can do better and how we can
 # represent it.
@@ -104,7 +209,8 @@ def json_fixup(
             obj = obj.replace(';schemaconstr', ' exclusive constraint index')
             obj = obj.replace('_target_key', ' backward link index')
             # ???
-            obj = obj.replace('_index', ' backward inline link index')
+            obj = obj.replace('_index', ' index')
+            # obj = obj.replace('_index', ' backward inline link index')
 
         for (full, m) in uuid_re.findall(obj):
             uid = uuid.UUID(m)
@@ -156,9 +262,14 @@ def analyze_explain_output(
         plan = json.loads(data[0][0])
     except UnicodeDecodeError:
         breakpoint()
+
     plan = json_fixup(plan, schema)
 
     debug.dump(plan)
+
+    # XXX: OBVIOUSLY EARLY
+    info = analyze_queries(ql, ir, pg, schema=schema)
+    # debug.dump(info, _ast_include_meta=False)
 
     return make_message([{
         'edgeql': "UNIMPLEMENTED",

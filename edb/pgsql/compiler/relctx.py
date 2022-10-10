@@ -1472,6 +1472,7 @@ def range_for_material_objtype(
             schemaname=table_schema_name,
             name=table_name,
             path_id=path_id,
+            path_scope_id=ctx.scope_tree.unique_id,
         )
 
         rvar = pgast.RelRangeVar(
@@ -1763,7 +1764,10 @@ def table_from_ptrref(
         table_schema_name = 'edgedbss'
 
     relation = pgast.Relation(
-        schemaname=table_schema_name, name=table_name)
+        schemaname=table_schema_name,
+        name=table_name,
+        path_scope_id=ctx.scope_tree.unique_id,
+    )
 
     # Pseudo pointers (tuple and type intersection) have no schema id.
     sobj_id = ptrref.id if isinstance(ptrref, irast.PointerRef) else None
