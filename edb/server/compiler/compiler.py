@@ -575,6 +575,7 @@ class Compiler:
     def _get_compile_options(
         self,
         ctx: CompileContext,
+        is_explain: bool=False,
     ) -> qlcompiler.CompilerOptions:
         can_have_implicit_fields = (
             ctx.output_format is enums.OutputFormat.BINARY)
@@ -607,7 +608,7 @@ class Compiler:
                 debug.flags.edgeql_expand_inhviews
                 and not ctx.bootstrap_mode
                 and not ctx.schema_reflection_mode
-            ),
+            ) or is_explain,
             apply_user_access_policies=self.get_config_val(
                 ctx, 'apply_access_policies'),
             allow_user_specified_id=self.get_config_val(
@@ -628,7 +629,8 @@ class Compiler:
         exp_command = f'EXPLAIN ({analyze}FORMAT JSON, VERBOSE true)'
 
         query = self._compile_ql_query(
-            ctx, ql.query, script_info=script_info, cacheable=False)
+            ctx, ql.query, script_info=script_info, is_explain=True,
+            cacheable=False)
         assert len(query.sql) == 1
 
         out_type_data, out_type_id = \
@@ -651,12 +653,13 @@ class Compiler:
         script_info: Optional[irast.ScriptInfo] = None,
         cacheable: bool = True,
         migration_block_query: bool = False,
+        is_explain: bool = False,
     ) -> dbstate.BaseQuery:
 
         current_tx = ctx.state.current_tx()
 
         schema = current_tx.get_schema(self._std_schema)
-        options = self._get_compile_options(ctx)
+        options = self._get_compile_options(ctx, is_explain=is_explain)
         ir = qlcompiler.compile_ast_to_ir(
             ql,
             schema=schema,
