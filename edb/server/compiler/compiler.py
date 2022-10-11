@@ -603,6 +603,11 @@ class Compiler:
                 not ctx.bootstrap_mode
                 and not ctx.schema_reflection_mode
             ),
+            expand_inhviews=(
+                debug.flags.edgeql_expand_inhviews
+                and not ctx.bootstrap_mode
+                and not ctx.schema_reflection_mode
+            ),
             apply_user_access_policies=self.get_config_val(
                 ctx, 'apply_access_policies'),
             allow_user_specified_id=self.get_config_val(
@@ -651,11 +656,12 @@ class Compiler:
         current_tx = ctx.state.current_tx()
 
         schema = current_tx.get_schema(self._std_schema)
+        options = self._get_compile_options(ctx)
         ir = qlcompiler.compile_ast_to_ir(
             ql,
             schema=schema,
             script_info=script_info,
-            options=self._get_compile_options(ctx),
+            options=options,
         )
 
         result_cardinality = enums.cardinality_from_ir_value(ir.cardinality)
@@ -670,6 +676,7 @@ class Compiler:
             expected_cardinality_one=ctx.expected_cardinality_one,
             output_format=_convert_format(ctx.output_format),
             backend_runtime_params=ctx.backend_runtime_params,
+            expand_inhviews=options.expand_inhviews,
         )
 
         if (

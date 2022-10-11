@@ -256,6 +256,7 @@ def type_to_typeref(
     include_children = (
         expr_type is s_types.ExprType.Update
         or expr_type is s_types.ExprType.Delete
+        or env.options.expand_inhviews
     )
     include_ancestors = (
         expr_type is s_types.ExprType.Insert

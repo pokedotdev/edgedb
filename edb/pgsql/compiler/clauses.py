@@ -51,7 +51,14 @@ def get_volatility_ref(
     if not ref:
         rvar = relctx.maybe_get_path_rvar(
             stmt, path_id, aspect='value', ctx=ctx)
-        if rvar and isinstance(rvar.query, pgast.ReturningQuery):
+        if (
+            rvar
+            and isinstance(rvar.query, pgast.ReturningQuery)
+            # XXX: Is this legit? Otherwise ran into trouble with
+            # expanding in EXPLAIN mode
+            and not (
+                isinstance(rvar.query, pgast.SelectStmt) and rvar.query.op)
+        ):
             # If we are selecting from a nontrivial subquery, manually
             # add a volatility ref based on row_number. We do it
             # manually because the row number isn't /really/ the
